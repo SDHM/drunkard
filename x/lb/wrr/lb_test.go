@@ -1,4 +1,4 @@
-package lb
+package wrr
 
 import (
 	"testing"
@@ -6,31 +6,32 @@ import (
 	"fmt"
 
 	"google.golang.org/grpc"
+	"drunkard/x/lb"
 )
 
 func Test_Lb(t *testing.T) {
-	addr1 := addrInfo{
+	addr1 := lb.addrInfo{
 		addr: grpc.Address{
 			Addr: "a",
 		},
 		weight: 4,
 	}
 
-	addr2 := addrInfo{
+	addr2 := lb.addrInfo{
 		addr: grpc.Address{
 			Addr: "b",
 		},
 		weight: 2,
 	}
 
-	addr3 := addrInfo{
+	addr3 := lb.addrInfo{
 		addr: grpc.Address{
 			Addr: "c",
 		},
 		weight: 1,
 	}
 
-	addrs := make([]*addrInfo, 0)
+	addrs := make([]*lb.addrInfo, 0)
 	addrs = append(addrs, &addr1)
 	addrs = append(addrs, &addr2)
 	addrs = append(addrs, &addr3)

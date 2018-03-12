@@ -1,4 +1,4 @@
-package lb
+package wrr
 
 import (
 	"errors"
@@ -15,12 +15,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/naming"
+	"drunkard/x/lb"
 )
 
 type weightRoundRobin struct {
 	r         naming.Resolver
 	w         naming.Watcher
-	addrs     []*addrInfo         // all the addresses the client should potentially connect
+	addrs     []*lb.AddrInfo         // all the addresses the client should potentially connect
 	mu        sync.Mutex          //
 	addrCh    chan []grpc.Address // the channel to notify gRPC internals the list of addresses the client should connect to.
 	next      int                 // index of the next address to return for Get()
@@ -43,7 +44,7 @@ func (rr *weightRoundRobin) Start(target string, config grpc.BalancerConfig) err
 		// If there is no name resolver installed, it is not needed to
 		// do name resolution. In this case, target is added into rr.addrs
 		// as the only address available and rr.addrCh stays nil.
-		rr.addrs = append(rr.addrs, &addrInfo{addr: grpc.Address{Addr: target}})
+		rr.addrs = append(rr.addrs, &lb.AddrInfo{Addr: grpc.Address{Addr: target}})
 		return nil
 	}
 	w, err := rr.r.Resolve(target)
@@ -79,12 +80,12 @@ func (rr *weightRoundRobin) watchAddrUpdates() error {
 		case naming.Add:
 			var exist bool
 			for _, v := range rr.addrs {
-				if addr == v.addr {
+				if addr == v.Addr {
 					exist = true
 					// 如果存在更新权重
 					var reg sd.RegValue
 					reg.Decode([]byte(update.Metadata.(string)))
-					v.weight, _ = strconv.Atoi(reg.Weight)
+					v.Weight, _ = strconv.Atoi(reg.Weight)
 					grpclog.Infoln("grpc: The name resolver wanted to add an existing address: ", addr)
 					break
 				}
@@ -96,14 +97,14 @@ func (rr *weightRoundRobin) watchAddrUpdates() error {
 				reg.Decode([]byte(update.Metadata.(string)))
 				weight, _ := strconv.Atoi(reg.Weight)
 				rr.weightSum += weight
-				rr.addrs = append(rr.addrs, &addrInfo{addr: addr, weight: weight})
+				rr.addrs = append(rr.addrs, &lb.AddrInfo{Addr: addr, Weight: weight})
 			}
 
 		case naming.Delete:
 			for i, v := range rr.addrs {
-				if addr == v.addr {
+				if addr == v.Addr {
 					copy(rr.addrs[i:], rr.addrs[i+1:])
-					rr.weightSum -= rr.addrs[i].weight
+					rr.weightSum -= rr.addrs[i].Weight
 					rr.addrs = rr.addrs[:len(rr.addrs)-1]
 					break
 				}
@@ -115,7 +116,7 @@ func (rr *weightRoundRobin) watchAddrUpdates() error {
 	// Make a copy of rr.addrs and write it onto rr.addrCh so that gRPC internals gets notified.
 	open := make([]grpc.Address, len(rr.addrs))
 	for i, v := range rr.addrs {
-		open[i] = v.addr
+		open[i] = v.Addr
 	}
 	if rr.done {
 		return grpc.ErrClientConnClosing
@@ -134,13 +135,13 @@ func (rr *weightRoundRobin) Up(addr grpc.Address) func(error) {
 	defer rr.mu.Unlock()
 	var cnt int
 	for _, a := range rr.addrs {
-		if a.addr == addr {
-			if a.connected {
+		if a.Addr == addr {
+			if a.Connected {
 				return nil
 			}
-			a.connected = true
+			a.Connected = true
 		}
-		if a.connected {
+		if a.Connected {
 			cnt++
 		}
 	}
@@ -159,8 +160,8 @@ func (rr *weightRoundRobin) down(addr grpc.Address, err error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	for _, a := range rr.addrs {
-		if addr == a.addr {
-			a.connected = false
+		if addr == a.Addr {
+			a.Connected = false
 			break
 		}
 	}
@@ -188,8 +189,8 @@ func (rr *weightRoundRobin) Get(ctx context.Context, opts grpc.BalancerGetOption
 		for {
 			a := rr.addrs[next]
 			next = lb_getNext(rr.addrs, len(rr.addrs))
-			if a.connected {
-				addr = a.addr
+			if a.Connected {
+				addr = a.Addr
 				rr.next = next
 				rr.mu.Unlock()
 				return
@@ -208,7 +209,7 @@ func (rr *weightRoundRobin) Get(ctx context.Context, opts grpc.BalancerGetOption
 		}
 
 		// Returns the next addr on rr.addrs for failfast RPCs.
-		addr = rr.addrs[rr.next].addr
+		addr = rr.addrs[rr.next].Addr
 		rr.next = lb_getNext(rr.addrs, len(rr.addrs))
 		rr.mu.Unlock()
 		fmt.Println("return2:", addr.Addr)
@@ -244,8 +245,8 @@ func (rr *weightRoundRobin) Get(ctx context.Context, opts grpc.BalancerGetOption
 				for {
 					a := rr.addrs[next]
 					next = lb_getNext(rr.addrs, len(rr.addrs))
-					if a.connected {
-						addr = a.addr
+					if a.Connected {
+						addr = a.Addr
 						rr.next = next
 						rr.mu.Unlock()
 						fmt.Println("return3:", addr.Addr)
@@ -293,18 +294,18 @@ func (rr *weightRoundRobin) Close() error {
 	return nil
 }
 
-func lb_getNext(ss []*addrInfo, size int) int {
+func lb_getNext(ss []*lb.AddrInfo, size int) int {
 
 	index := -1
 	total := 0
 	for i := 0; i < size; i++ {
-		ss[i].currentWeight += ss[i].weight
-		total += ss[i].weight
-		if index == -1 || ss[index].currentWeight < ss[i].currentWeight {
+		ss[i].CurrentWeight += ss[i].Weight
+		total += ss[i].Weight
+		if index == -1 || ss[index].CurrentWeight < ss[i].CurrentWeight {
 			index = i
 		}
 	}
 
-	ss[index].currentWeight -= total
+	ss[index].CurrentWeight -= total
 	return index
 }

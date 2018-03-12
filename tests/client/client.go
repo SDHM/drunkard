@@ -9,7 +9,7 @@ import (
 
 	"drunkard/tests/pb"
 
-	"drunkard/x/lb"
+	"drunkard/x/lb/ch"
 	grpclb "drunkard/x/sd/etcd"
 
 	"golang.org/x/net/context"
@@ -45,7 +45,7 @@ func main() {
 	flag.Parse()
 
 	r := grpclb.NewResolver(*serv)
-	b := lb.LeastActiveLB(r)
+	b := ch.ConsistentHaslLB(r)
 
 	// ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
 

@@ -1,4 +1,4 @@
-package lb
+package la
 
 import (
 	"drunkard/x/sd"
@@ -17,12 +17,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/naming"
+	"drunkard/x/lb"
 )
 
 type leastActive struct {
 	r         naming.Resolver
 	w         naming.Watcher
-	addrs     []*addrInfo         // all the addresses the client should potentially connect
+	addrs     []*lb.AddrInfo         // all the addresses the client should potentially connect
 	mu        sync.Mutex          //
 	addrCh    chan []grpc.Address // the channel to notify gRPC internals the list of addresses the client should connect to.
 	next      int                 // index of the next address to return for Get()
@@ -47,7 +48,7 @@ func (la *leastActive) Start(target string, config grpc.BalancerConfig) error {
 		// If there is no name resolver installed, it is not needed to
 		// do name resolution. In this case, target is added into la.addrs
 		// as the only address available and la.addrCh stays nil.
-		la.addrs = append(la.addrs, &addrInfo{addr: grpc.Address{Addr: target}})
+		la.addrs = append(la.addrs, &lb.AddrInfo{Addr: grpc.Address{Addr: target}})
 		return nil
 	}
 	w, err := la.r.Resolve(target)
@@ -83,12 +84,12 @@ func (la *leastActive) watchAddrUpdates() error {
 		case naming.Add:
 			var exist bool
 			for _, v := range la.addrs {
-				if addr == v.addr {
+				if addr == v.Addr {
 					exist = true
 					// 如果存在更新权重
 					var reg sd.RegValue
 					reg.Decode([]byte(update.Metadata.(string)))
-					v.weight, _ = strconv.Atoi(reg.Weight)
+					v.Weight, _ = strconv.Atoi(reg.Weight)
 					grpclog.Infoln("grpc: The name resolver wanted to add an existing address: ", addr)
 					break
 				}
@@ -100,14 +101,14 @@ func (la *leastActive) watchAddrUpdates() error {
 				reg.Decode([]byte(update.Metadata.(string)))
 				weight, _ := strconv.Atoi(reg.Weight)
 				la.weightSum += weight
-				la.addrs = append(la.addrs, &addrInfo{addr: addr, weight: weight})
+				la.addrs = append(la.addrs, &lb.AddrInfo{Addr: addr, Weight: weight})
 			}
 
 		case naming.Delete:
 			for i, v := range la.addrs {
-				if addr == v.addr {
+				if addr == v.Addr {
 					copy(la.addrs[i:], la.addrs[i+1:])
-					la.weightSum -= la.addrs[i].weight
+					la.weightSum -= la.addrs[i].Weight
 					la.addrs = la.addrs[:len(la.addrs)-1]
 					break
 				}
@@ -119,7 +120,7 @@ func (la *leastActive) watchAddrUpdates() error {
 	// Make a copy of la.addrs and write it onto la.addrCh so that gRPC internals gets notified.
 	open := make([]grpc.Address, len(la.addrs))
 	for i, v := range la.addrs {
-		open[i] = v.addr
+		open[i] = v.Addr
 	}
 	if la.done {
 		return grpc.ErrClientConnClosing
@@ -138,13 +139,13 @@ func (la *leastActive) Up(addr grpc.Address) func(error) {
 	defer la.mu.Unlock()
 	var cnt int
 	for _, a := range la.addrs {
-		if a.addr == addr {
-			if a.connected {
+		if a.Addr == addr {
+			if a.Connected {
 				return nil
 			}
-			a.connected = true
+			a.Connected = true
 		}
-		if a.connected {
+		if a.Connected {
 			cnt++
 		}
 	}
@@ -163,8 +164,8 @@ func (la *leastActive) down(addr grpc.Address, err error) {
 	la.mu.Lock()
 	defer la.mu.Unlock()
 	for _, a := range la.addrs {
-		if addr == a.addr {
-			a.connected = false
+		if addr == a.Addr {
+			a.Connected = false
 			break
 		}
 	}
@@ -189,8 +190,8 @@ func (la *leastActive) Get(ctx context.Context, opts grpc.BalancerGetOptions) (a
 		for {
 			a := la.addrs[next]
 			next = la.getNext()
-			if a.connected {
-				addr = a.addr
+			if a.Connected {
+				addr = a.Addr
 				la.next = next
 				a.AddActive()
 				put = func() {
@@ -216,7 +217,7 @@ func (la *leastActive) Get(ctx context.Context, opts grpc.BalancerGetOptions) (a
 		}
 
 		// Returns the next addr on la.addrs for failfast RPCs.
-		addr = la.addrs[la.next].addr
+		addr = la.addrs[la.next].Addr
 		la.addrs[la.next].AddActive()
 		put = func() {
 			la.addrs[la.next].Lock()
@@ -259,8 +260,8 @@ func (la *leastActive) Get(ctx context.Context, opts grpc.BalancerGetOptions) (a
 				for {
 					a := la.addrs[next]
 					next = la.getNext()
-					if a.connected {
-						addr = a.addr
+					if a.Connected {
+						addr = a.Addr
 						la.next = next
 						a.AddActive()
 						put = func() {
@@ -318,17 +319,17 @@ func (la *leastActive) Close() error {
 func (la *leastActive) getNext() int {
 	index := -1
 	size := len(la.addrs)
-	leastNum := la.addrs[0].active
+	leastNum := la.addrs[0].Active
 	leastIndex := make([]int, 0)
 	for i := 0; i < size; i++ {
-		active := la.addrs[i].active
+		active := la.addrs[i].Active
 		if leastNum > active {
 			leastNum = active
 		}
 	}
 
 	for i := 0; i < size; i++ {
-		if la.addrs[i].active == leastNum {
+		if la.addrs[i].Active == leastNum {
 			leastIndex = append(leastIndex, i)
 		}
 	}

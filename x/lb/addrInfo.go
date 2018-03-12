@@ -11,29 +11,29 @@ import (
 )
 
 // 与地址相关的信息
-type addrInfo struct {
-	addr          grpc.Address // 地址
-	connected     bool         // 是否连接
-	weight        int          // 权重
-	currentWeight int          // 当前权重
-	active        int32        // 活跃连接数
-	mu            sync.Mutex   //
+type AddrInfo struct {
+	Addr          grpc.Address // 地址
+	Connected     bool         // 是否连接
+	Weight        int          // 权重
+	CurrentWeight int          // 当前权重
+	Active        int32        // 活跃连接数
+	Mu            sync.Mutex   //
 }
 
-func (ai *addrInfo) Lock() {
-	ai.mu.Lock()
+func (ai *AddrInfo) Lock() {
+	ai.Mu.Lock()
 }
 
-func (ai *addrInfo) UnLock() {
-	ai.mu.Unlock()
+func (ai *AddrInfo) UnLock() {
+	ai.Mu.Unlock()
 }
 
-func (ai *addrInfo) AddActive() {
-	atomic.AddInt32(&ai.active, 1)
-	fmt.Printf("current activity of:%s count:%d\n", ai.addr.Addr, ai.active)
+func (ai *AddrInfo) AddActive() {
+	atomic.AddInt32(&ai.Active, 1)
+	fmt.Printf("current activity of:%s count:%d\n", ai.Addr.Addr, ai.Active)
 }
 
-func (ai *addrInfo) SubActive() {
-	atomic.AddInt32(&ai.active, -1)
-	fmt.Printf("current activity of:%s count:%d\n", ai.addr.Addr, ai.active)
+func (ai *AddrInfo) SubActive() {
+	atomic.AddInt32(&ai.Active, -1)
+	fmt.Printf("current activity of:%s count:%d\n", ai.Addr.Addr, ai.Active)
 }
