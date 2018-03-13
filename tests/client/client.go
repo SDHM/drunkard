@@ -58,9 +58,13 @@ func main() {
 	client := pb.NewGreeterClient(conn)
 
 	ticker := time.NewTicker(time.Millisecond * 200)
+	count := 0
 	for t := range ticker.C {
 
-		resp, err := client.SayHello(context.Background(), &pb.HelloRequest{Name: "world " + strconv.Itoa(t.Second())})
+		count++;
+		ctx := context.WithValue(context.Background(), "userid", count)
+	
+		resp, err := client.SayHello(ctx, &pb.HelloRequest{Name: "world " + strconv.Itoa(t.Second())})
 		if err == nil {
 			fmt.Printf("%v: Reply is %s\n", t, resp.Message)
 		} else {

@@ -64,6 +64,6 @@ type server struct{}
 // SayHello implements helloworld.GreeterServer
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
 	fmt.Printf("%v: Receive is %s\n", time.Now(), in.Name)
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 1)
 	return &pb.HelloReply{Message: "From Server 31Hello " + in.Name}, nil
 }

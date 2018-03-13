@@ -173,6 +173,8 @@ func (rr *consistentHaslLB) Get(ctx context.Context, opts grpc.BalancerGetOption
 		fmt.Println("rpc call return")
 	}
 
+	fmt.Println("userId:", ctx.Value("userid"))
+
 	var ch chan struct{}
 	rr.mu.Lock()
 	if rr.done {
